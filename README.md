@@ -1,5 +1,9 @@
 # piborg-mqtt
-Piborg add-ons for joystick control and my python/github immersion
+Piborg add-ons for joystick control and my foray into python/github
 
-Hardware https://www.piborg.org/diddyborg 
-Architecture mqttJoyStick.py <---MQTT broker---> mqttRemoteControl.py 
+Hardware from https://www.piborg.org/diddyborg 
+
+Software components mqttJoyStick.py <---MQTT broker---> mqttRemoteControl.py
+mqttJoystick.py sends joystick signals to the broker from controller PC as topics. 
+mqttRemoteControl.py receives topics and sends signals to the diddyborg motors
+uv4l used to stream video back to the controller PC
