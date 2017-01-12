@@ -1,0 +1,91 @@
+# -*- coding: utf-8 -*-
+import paho.mqtt.client as mqtt
+import time
+import pygame
+
+
+
+# Setup pygame and key states
+global hadEvent
+hadEvent = True
+axis=[]
+mqttBroker="192.168.1.5"
+
+pygame.init()
+pygame.joystick.init()
+joystick = pygame.joystick.Joystick(0)
+joystick.init()
+screen = pygame.display.set_mode([300,300])
+pygame.display.set_caption("mqttJoyStick - Press [ESC] to quit")
+#axisUpDown = 1                          # Joystick axis to read for up / down position
+#axisUpDownInverted = False              # Set this to True if up and down appear to be swapped
+#axisLeftRight = 3                       # Joystick axis to read for left / right position
+#axisLeftRightInverted = False           # Set this to True if left and right appear to be swapped
+
+print 'Waiting for joystick... (press CTRL+C to abort)'
+while True:
+    try:
+        try:
+            pygame.joystick.init()
+            # Attempt to setup the joystick
+            if pygame.joystick.get_count() < 1:
+                # No joystick attached, toggle the LED
+                pygame.joystick.quit()
+                time.sleep(0.5)
+            else:
+                # We have a joystick, attempt to initialise it!
+                joystick = pygame.joystick.Joystick(0)
+                break
+        except pygame.error:
+            pygame.joystick.quit()
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        # CTRL+C exit, give up
+        print '\nUser aborted'
+        sys.exit()
+print 'Joystick found'
+joystick.init()
+# Get the name from the OS for the controller/joystick
+joystickName = joystick.get_name()
+print("Joystick name: {}".format(joystickName) )
+numAxes = joystick.get_numaxes()
+print("Number of axes: {}".format(numAxes) )
+numButtons = joystick.get_numbuttons()
+print("Number of buttons: {}".format(numButtons) )
+
+#MQTT
+client = mqtt.Client()
+#client.on_publish = on_publish
+client.connect(mqttBroker, 1883, keepalive=30)
+client.loop_start()
+
+try:
+    print 'Press CTRL+C to quit'
+    running = True
+    hadEvent = False
+    # Loop indefinitely
+    while running:
+        # Get the latest events from the system
+        hadEvent = False
+        events = pygame.event.get()
+        # Handle each event individually
+        for event in events:
+            if event.type == pygame.QUIT:
+                # User exit
+                running = False
+            elif event.type == pygame.JOYBUTTONDOWN:
+                # A button on the joystick just got pushed down
+                hadEvent = True                   
+            elif event.type == pygame.JOYAXISMOTION:
+                # A joystick has been moved1
+                hadEvent = True
+            if hadEvent:
+	       for i in range(numAxes):
+                     topicKey = "joystick/"+str(i)
+                     topicValue = joystick.get_axis(i)
+                     print("Topic: {} {}".format(topicKey, topicValue) )
+                     (rc, mid) = client.publish(topicKey, topicValue, qos=0)                    
+
+except KeyboardInterrupt:
+    print
+

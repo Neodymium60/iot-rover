@@ -1,0 +1,194 @@
+#!/usr/bin/env python
+# coding: Latin-1
+
+import paho.mqtt.client as mqtt
+import PicoBorgRev
+import time
+import sys
+import subprocess
+import threading
+
+
+#global variables
+global PBR
+global lastFrame
+global lockFrame
+global camera
+global running
+global watchdog
+running = True
+mqttBroker="127.0.0.1"
+topic_sub='joystick/#'
+sensitivity=0.15
+
+# Settings for the joystick
+axisUpDown = "joystick/1"                          # Joystick axis to read for up / down position
+axisUpDownInverted = False              # Set this to True if up and down appear to be swapped
+axisLeftRight = "joystick/0"                       # Joystick axis to read for left / right position
+axisLeftRightInverted = True           # Set this to True if left and right appear to be swapped
+axisSpin =  "joystick/3"
+axisSpinInverted = True
+
+# Setup the PicoBorg Reverse
+PBR = PicoBorgRev.PicoBorgRev()
+#PBR.i2cAddress = 0x44                  # Uncomment and change the value if you have changed the board address
+PBR.Init()
+if not PBR.foundChip:
+    boards = PicoBorgRev.ScanForPicoBorgReverse()
+    if len(boards) == 0:
+        print 'No PicoBorg Reverse found, check you are attached :)'
+    else:
+        print 'No PicoBorg Reverse at address %02X, but we did find boards:' % (PBR.i2cAddress)
+        for board in boards:
+            print '    %02X (%d)' % (board, board)
+        print 'If you need to change the I2C address change the setup line so it is correct, e.g.'
+        print 'PBR.i2cAddress = 0x%02X' % (boards[0])
+    sys.exit()
+#PBR.SetEpoIgnore(True)                 # Uncomment to disable EPO latch, needed if you do not have a switch / jumper
+PBR.SetCommsFailsafe(False)             # Disable the communications failsafe
+PBR.ResetEpo()
+
+# Power settings
+voltageIn = 1.2 * 10                    # Total battery voltage to the PicoBorg Reverse
+voltageOut = 6.0                        # Maximum motor voltage
+
+# Setup the power limits
+if voltageOut > voltageIn:
+    maxPower = 1.0
+else:
+    maxPower = voltageOut / float(voltageIn)
+
+# Timeout thread
+class Watchdog(threading.Thread):
+    def __init__(self):
+        super(Watchdog, self).__init__()
+        self.event = threading.Event()
+        self.terminated = False
+        self.start()
+        self.timestamp = time.time()
+
+    def run(self):
+        timedOut = True
+        # This method runs in a separate thread
+        while not self.terminated:
+            # Wait for a network event to be flagged for up to one second
+            if timedOut:
+                if self.event.wait(1):
+                    # Connection
+                    print 'Reconnected...'
+                    timedOut = False
+                    self.event.clear()
+            else:
+                if self.event.wait(1):
+                    self.event.clear()
+                else:
+                    # Timed out
+                    print 'Timed out...'
+                    timedOut = True
+                    PBR.MotorsOff()
+
+
+#MQTT thread
+# The callback for when the client receives a CONNACK response from the server.
+def on_connect(client, userdata, flags, rc):
+    print("Connected with result code "+str(rc))
+
+    # Subscribing in on_connect() means that if we lose the connection and
+    # reconnect then subscriptions will be renewed.
+    client.subscribe(topic_sub)
+
+# The callback for when a PUBLISH message is received from the server.
+def on_message(client, userdata, msg):
+    #print(msg.topic+" "+str(msg.payload))
+
+    if msg.topic == axisUpDown:
+        if axisUpDownInverted:
+            upDown = -float(msg.payload)
+        else:
+            upDown = float(msg.payload)
+        if upDown < -sensitivity:
+            print ("Drive forward {}" .format(msg.payload))
+            driveLeft = -(upDown * maxPower)
+            driveRight = upDown * maxPower
+            PBR.SetMotor1(driveLeft)
+            PBR.SetMotor2(driveRight)
+        if upDown > sensitivity:
+            print ("Drive backward {}" .format(msg.payload))
+            driveLeft = -(upDown * maxPower)
+            driveRight = upDown * maxPower
+            PBR.SetMotor1(driveLeft)
+            PBR.SetMotor2(driveRight)
+
+    #if msg.topic == axisLeftRight:
+    #    if axisLeftRightInverted:
+    #        leftRight = -float(msg.payload)
+    #    else:
+    #         leftRight = float(msg.payload)
+    #    if leftRight < -sensitivity:
+    #        print ("Drive right {}" .format(msg.payload))
+    #        driveLeft = upDown - leftRight
+            #PBR.SetMotor1(driveLeft)
+            #PBR.SetMotor2(driveRight)
+
+    #    if leftRight > sensitivity:
+    #        print ("Drive left {}" .format(msg.payload))
+    #        #driveLeft = -(upDown - leftRight) * maxPower
+            #driveRight = upDown - leftRight * maxPower
+            #PBR.SetMotor1(driveLeft)
+            #PBR.SetMotor2(driveRight)
+
+
+    if msg.topic == axisSpin:
+        if axisSpinInverted:
+            spin = -float(msg.payload)
+        else:
+            spin = float(msg.payload)
+
+        if spin < -sensitivity:
+           print ("Spin right {}" .format(msg.payload))
+           driveLeft = spin * maxPower
+           driveRight = spin * maxPower
+           PBR.SetMotor1(driveLeft)
+           PBR.SetMotor2(driveRight)
+        if spin > sensitivity:
+           print ("Spin left {}" .format(msg.payload))
+           driveLeft = spin * maxPower
+           driveRight = spin * maxPower
+           PBR.SetMotor1(driveLeft)
+           PBR.SetMotor2(driveRight)
+
+
+client = mqtt.Client()
+client.on_connect = on_connect
+client.on_message = on_message
+client.connect(mqttBroker, 1883, 60)
+
+try:
+    print 'Press CTRL+C to terminate'
+    driveLeft = 0.0
+    driveRight = 0.0
+    running = True
+    upDown = 0.0
+    leftRight = 0.0
+    spin = 0.0
+    # Loop indefinitely
+    while running:
+    # Blocking call that processes network traffic, dispatches callbacks and
+    # handles reconnecting.
+    # Other loop*() functions are available that give a threaded interface and a
+    # manual interface.
+        client.loop_forever()
+
+
+except KeyboardInterrupt:
+    # CTRL+C exit
+    print '\nUser shutdown'
+finally:
+    # Turn the motors off under all scenarios
+    PBR.MotorsOff()
+    print 'Motors off'
+    # Tell each thread to stop, and wait for them to end
+    running = False
+    watchdog.terminated = True
+    watchdog.join()
+    PBR.SetLed(True)
