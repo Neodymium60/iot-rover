@@ -13,3 +13,6 @@ https://youtu.be/9OBobfw_6-4
 
 Tethered via 4G from a server in the Netherlands
 https://youtu.be/G1kUCqwH7SM
+
+Integrating the ultrasonic sensor and arduino
+https://youtu.be/x3lbnBCh8cQ
