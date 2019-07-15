@@ -18,7 +18,7 @@ Integrating the ultrasonic sensor and arduino
 https://youtu.be/x3lbnBCh8cQ
 
 To do:
-1) Convert MQTT topics to JSON format
+1) ~~Convert MQTT topics to JSON format~~
 2) Implement MQTT proxy via AWS IoT
 3) Return rover telemetry data to ground station for HUD overlay
 4) Implement autonomous roving
